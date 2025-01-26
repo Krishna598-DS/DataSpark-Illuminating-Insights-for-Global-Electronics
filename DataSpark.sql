@@ -1,157 +1,116 @@
-use customer_sale_data;
+USE dataspark;
 
--- Total Customers
-SELECT COUNT(CustomerKey) AS Total_Customers
-FROM customer_details;
+SELECT * FROM customer_details;
+SELECT * FROM sales_details;
+SELECT * FROM product_details;
+SELECT * FROM store_details;
 
--- Customers by Gender
-SELECT Gender, COUNT(*) AS Total_Customers
+-- Demographic Distribution of Customers by Gender and Age
+SELECT 
+    Gender, 
+    FLOOR(DATEDIFF(CURDATE(), Birthday) / 365) AS AgeGroup, 
+    COUNT(CustomerKey) AS CustomerCount
 FROM customer_details
-GROUP BY Gender;
+GROUP BY Gender, AgeGroup
+ORDER BY CustomerCount DESC;
 
--- Customers by State
-SELECT State, COUNT(*) AS Customer_Count
-FROM customer_details
-GROUP BY State
-ORDER BY Customer_Count DESC;
-
--- Total Sales by Product
-SELECT pd.ProductKey, pd.Product_Name, SUM(sd.Quantity) AS Total_Sales
+-- Top 10 Customers by Total Purchases
+SELECT 
+    sd.CustomerKey, 
+    cd.Name, 
+    SUM(sd.Quantity * pd.Unit_Price_USD) AS TotalPurchase
 FROM sales_details sd
+JOIN customer_details cd ON sd.CustomerKey = cd.CustomerKey
 JOIN product_details pd ON sd.ProductKey = pd.ProductKey
-GROUP BY pd.ProductKey, pd.Product_Name
-ORDER BY Total_Sales DESC;
-
--- Total Revenue by Product
-SELECT pd.ProductKey, pd.Product_Name, SUM(sd.Quantity * pd.Unit_Price_USD) AS Total_Revenue
-FROM sales_details sd
-JOIN product_details pd ON sd.ProductKey = pd.ProductKey
-GROUP BY pd.ProductKey, pd.Product_Name
-ORDER BY Total_Revenue DESC;
-
--- Top-Selling Brand
-SELECT pd.Brand, SUM(sd.Quantity) AS Total_Quantity_Sold
-FROM sales_details sd
-JOIN product_details pd ON sd.ProductKey = pd.ProductKey
-GROUP BY pd.Brand
-ORDER BY Total_Quantity_Sold DESC
-LIMIT 1;
-
--- Total Sales by Store
-SELECT sd.StoreKey, COUNT(DISTINCT sd.Order_Number) AS Total_Orders
-FROM sales_details sd
-GROUP BY sd.StoreKey
-ORDER BY Total_Orders DESC;
-
--- Total Sales by Currency Code
-SELECT sd.Currency_Code, SUM(sd.Quantity) AS Total_Sales
-FROM sales_details sd
-GROUP BY sd.Currency_Code
-ORDER BY Total_Sales DESC;
-
--- Top-Spending Customers:
-SELECT sd.CustomerKey, c.Name, SUM(sd.Quantity * pd.Unit_Price_USD) AS Total_Spending
-FROM sales_details sd
-JOIN customer_details c ON sd.CustomerKey = c.CustomerKey
-JOIN product_details pd ON sd.ProductKey = pd.ProductKey
-GROUP BY sd.CustomerKey, c.Name
-ORDER BY Total_Spending DESC
+GROUP BY sd.CustomerKey, cd.Name
+ORDER BY TotalPurchase DESC
 LIMIT 10;
 
--- Repeat Customers:
-SELECT sd.CustomerKey, c.Name, COUNT(DISTINCT sd.Order_Number) AS Total_Orders
-FROM sales_details sd
-JOIN customer_details c ON sd.CustomerKey = c.CustomerKey
-GROUP BY sd.CustomerKey, c.Name
-HAVING Total_Orders > 1
-ORDER BY Total_Orders DESC;
-
--- Customer Purchase Frequency:
-SELECT sd.CustomerKey, c.Name, 
-       COUNT(DISTINCT sd.Order_Date) AS Purchase_Frequency
-FROM sales_details sd
-JOIN customer_details c ON sd.CustomerKey = c.CustomerKey
-GROUP BY sd.CustomerKey, c.Name
-ORDER BY Purchase_Frequency DESC;
-
--- Best-Selling Products by Revenue:
-SELECT pd.ProductKey, pd.Product_Name, 
-       SUM(sd.Quantity * pd.Unit_Price_USD) AS Total_Revenue
+--  Top 10 Best-Selling Products
+SELECT 
+    pd.ProductKey, 
+    pd.Product_Name, 
+    SUM(sd.Quantity) AS TotalQuantitySold
 FROM sales_details sd
 JOIN product_details pd ON sd.ProductKey = pd.ProductKey
 GROUP BY pd.ProductKey, pd.Product_Name
-ORDER BY Total_Revenue DESC
+ORDER BY TotalQuantitySold DESC
 LIMIT 10;
 
--- Slow-Moving Products:
-SELECT pd.ProductKey, pd.Product_Name, 
-       SUM(sd.Quantity) AS Total_Quantity_Sold
-FROM sales_details sd
-JOIN product_details pd ON sd.ProductKey = pd.ProductKey
-GROUP BY pd.ProductKey, pd.Product_Name
-HAVING Total_Quantity_Sold < 10
-ORDER BY Total_Quantity_Sold ASC;
+-- Profit Margins by Product
+SELECT 
+    pd.ProductKey, 
+    pd.Product_Name, 
+    pd.Unit_Cost_USD, 
+    pd.Unit_Price_USD, 
+    ROUND((pd.Unit_Price_USD - pd.Unit_Cost_USD) / pd.Unit_Cost_USD * 100, 2) AS ProfitMargin
+FROM product_details pd
+ORDER BY ProfitMargin DESC;
 
--- Product Categories with the Highest Revenue:
-SELECT pd.Category, 
-       SUM(sd.Quantity * pd.Unit_Price_USD) AS Total_Revenue
+-- Total Sales and Monthly Trends
+SELECT 
+    DATE_FORMAT(sd.`Order_Date`, '%Y-%m') AS Month, 
+    SUM(sd.Quantity * pd.Unit_Price_USD) AS TotalSales
 FROM sales_details sd
 JOIN product_details pd ON sd.ProductKey = pd.ProductKey
-GROUP BY pd.Category
-ORDER BY Total_Revenue DESC;
-
--- Monthly Sales Trend:
-SELECT DATE_FORMAT(Order_Date, '%Y-%m') AS Month, 
-       SUM(sd.Quantity * pd.Unit_Price_USD) AS Total_Revenue
-FROM sales_details sd
-JOIN product_details pd ON sd.ProductKey = pd.ProductKey
-GROUP BY DATE_FORMAT(Order_Date, '%Y-%m')
+GROUP BY Month
 ORDER BY Month;
 
--- Yearly Sales Growth:
-SELECT YEAR(Order_Date) AS Year, 
-       SUM(sd.Quantity * pd.Unit_Price_USD) AS Total_Revenue
+-- Average Order Value and Order Frequency
+SELECT 
+    sd.CustomerKey, 
+    COUNT(DISTINCT sd.`Order_Number`) AS TotalOrders,
+    ROUND(SUM(sd.Quantity * pd.Unit_Price_USD) / COUNT(DISTINCT sd.`Order_Number`), 2) AS AvgOrderValue
 FROM sales_details sd
 JOIN product_details pd ON sd.ProductKey = pd.ProductKey
-GROUP BY YEAR(Order_Date)
-ORDER BY Year;
-
--- Peak Sales Days:
-SELECT Order_Date, 
-       SUM(sd.Quantity * pd.Unit_Price_USD) AS Total_Revenue
-FROM sales_details sd
-JOIN product_details pd ON sd.ProductKey = pd.ProductKey
-GROUP BY Order_Date
-ORDER BY Total_Revenue DESC
-LIMIT 5;
-
--- Top-Performing Stores:
-SELECT sd.StoreKey, st.Country, st.State, 
-       SUM(sd.Quantity * pd.Unit_Price_USD) AS Total_Revenue
-FROM sales_details sd
-JOIN store_details st ON sd.StoreKey = st.StoreKey
-JOIN product_details pd ON sd.ProductKey = pd.ProductKey
-GROUP BY sd.StoreKey, st.Country, st.State
-ORDER BY Total_Revenue DESC
-LIMIT 5;
-
--- Underperforming Stores:
-SELECT sd.StoreKey, st.Country, st.State, 
-       SUM(sd.Quantity * pd.Unit_Price_USD) AS Total_Revenue
-FROM sales_details sd
-JOIN store_details st ON sd.StoreKey = st.StoreKey
-JOIN product_details pd ON sd.ProductKey = pd.ProductKey
-GROUP BY sd.StoreKey, st.Country, st.State
-HAVING Total_Revenue < 155000
-ORDER BY Total_Revenue ASC;
-
--- Popular Product Bundles:
-SELECT sd1.ProductKey AS Product1, sd2.ProductKey AS Product2, 
-       COUNT(*) AS Bundle_Count
-FROM sales_details sd1
-JOIN sales_details sd2 ON sd1.Order_Number = sd2.Order_Number 
-                       AND sd1.ProductKey < sd2.ProductKey
-GROUP BY sd1.ProductKey, sd2.ProductKey
-ORDER BY Bundle_Count DESC
+GROUP BY sd.CustomerKey
+ORDER BY AvgOrderValue DESC
 LIMIT 10;
 
+-- Top 5 Performing Stores by Sales
+SELECT 
+    st.StoreKey, 
+    st.Country, 
+    st.State, 
+    SUM(sd.Quantity * pd.Unit_Price_USD) AS TotalSales
+FROM sales_details sd
+JOIN store_details st ON sd.StoreKey = st.StoreKey
+JOIN product_details pd ON sd.ProductKey = pd.ProductKey
+GROUP BY st.StoreKey, st.Country, st.State
+ORDER BY TotalSales DESC
+LIMIT 5;
+
+-- Sales Efficiency by Store (Sales per Square Meter)
+SELECT 
+    st.StoreKey, 
+    st.Country, 
+    st.State, 
+    st.`Square_Meters`, 
+    ROUND(SUM(sd.Quantity * pd.Unit_Price_USD) / st.`Square_Meters`, 2) AS SalesPerSquareMeter
+FROM sales_details sd
+JOIN store_details st ON sd.StoreKey = st.StoreKey
+JOIN product_details pd ON sd.ProductKey = pd.ProductKey
+GROUP BY st.StoreKey, st.Country, st.State, st.`Square_Meters`
+ORDER BY SalesPerSquareMeter DESC
+LIMIT 10;
+
+-- Sales by Region (Country and State)
+SELECT 
+    st.Country, 
+    st.State, 
+    SUM(sd.Quantity * pd.Unit_Price_USD) AS TotalSales
+FROM sales_details sd
+JOIN store_details st ON sd.StoreKey = st.StoreKey
+JOIN product_details pd ON sd.ProductKey = pd.ProductKey
+GROUP BY st.Country, st.State
+ORDER BY TotalSales DESC;
+
+-- Total Sales by Product
+SELECT 
+    pd.Product_Name, 
+    SUM(sd.Quantity * pd.Unit_Price_USD) AS TotalSales
+FROM sales_details sd
+JOIN product_details pd ON sd.ProductKey = pd.ProductKey
+GROUP BY pd.Product_Name
+ORDER BY TotalSales DESC
+LIMIT 10;
